@@ -10,8 +10,19 @@ import pprint
 
 import pandas as pd
 import numpy as np
-""" import joblib
- """
+import joblib
+
+import seaborn as sns
+
+import sys
+
+from sklearn.model_selection import train_test_split, cross_val_score
+from sklearn.linear_model import LogisticRegression, RidgeClassifier
+from sklearn.linear_model import SGDClassifier
+from sklearn.ensemble import RandomForestClassifier,GradientBoostingClassifier
+from sklearn.metrics import accuracy_score, classification_report
+from sklearn.impute import SimpleImputer
+
 mp_holistic = mp.solutions.holistic
 
 
@@ -32,13 +43,11 @@ def draw_landmarks_on_image(rgb_image, detection_result):
   return annotated_image
 
 def make_detections(source):
-
   with mp_holistic.Holistic(
       static_image_mode=True,
       model_complexity=2,
       enable_segmentation=True,
       refine_face_landmarks=True) as holistic:
-    print(source)
     image = cv2.imread(source)
     results = holistic.process(cv2.cvtColor(image, cv2.COLOR_BGR2RGB))
   annotated_image = draw_landmarks_on_image(image, results)
@@ -54,29 +63,16 @@ def write_csv():
     fields +=["fx{}".format(x), "fy{}".format(x),"fz{}".format(x),"fv{}".format(x)] 
   df = pd.DataFrame(columns= fields);          
   for emotion in os.listdir("./dataset"):
+    print(emotion)
     if not emotion.startswith('.'):
       for img in os.listdir("./dataset/"+ emotion):
         if not img.startswith('.'):
           results=make_detections("./dataset/"+ emotion + "/" + img)
-          """ row = [emotion]
-          size = 0
-          if results.pose_landmarks:
-            for x in results.pose_landmarks.landmark:
-              row.extend([x.x, x.y, x.z, x.visibility])
-              size +=4
-          else :
-            for x in range(33):
-              row.extend([0,0,0,0]) 
-          if results.face_landmarks:
-            for x in results.face_landmarks.landmark:
-              row.extend([x.x, x.y, x.z, x.visibility])
-              size +=4
-          else :
-            for x in range(468):
-              row.extend([0,0,0,0])  """            
+          if not results.pose_landmarks and not results.face_landmarks:
+            print(img)
           coordinate = [emotion]
           if results.pose_landmarks:
-            for i,landmark in enumerate(results.pose_landmarks.landmark):
+            for landmark in results.pose_landmarks.landmark:
               if landmark is not None:
                   coordinate.append(landmark.x)
                   coordinate.append(landmark.y)
@@ -86,13 +82,13 @@ def write_csv():
                   coordinate.append(None)
                   coordinate.append(None)
                   coordinate.append(None)
-                  coordinate.append(None)
+                  coordinate.append(0)
           else:
             for x in range(33):
               coordinate.append(None)
               coordinate.append(None)
               coordinate.append(None)
-              coordinate.append(None)
+              coordinate.append(0)
           if results.face_landmarks:
             for landmark in results.face_landmarks.landmark:
               if landmark is not None:
@@ -104,55 +100,51 @@ def write_csv():
                 coordinate.append(None)
                 coordinate.append(None)
                 coordinate.append(None)
-                coordinate.append(None)
+                coordinate.append(0)
           else:
             for x in range(478):
               coordinate.append(None)
               coordinate.append(None)
               coordinate.append(None)
-              coordinate.append(None)
-          print(len(coordinate))
-          df.loc[len(df.index)] = coordinate            
-  df.to_csv('coords_test.csv', index=False)    
+              coordinate.append(0)
+          df.loc[len(df.index)] = coordinate       
+      selectedrows = df[df["class"]==emotion].drop("class", axis=1)
+      """       for col in selectedrows.drop("class", axis=1):
+              df.loc[df["class"]==emotion, col] = selectedrows[col].fillna(selectedrows[col].mean())
+      """  
+      imputer = SimpleImputer(missing_values = np.nan, strategy ='mean')
+      imputer = imputer.fit(selectedrows)
+      
+      """       imputer = KNNImputer(n_neighbors=2)
+            imputer.fit_transform(selectedrows)
+      """      
+      df.loc[df["class"]==emotion, selectedrows.columns] = imputer.transform(selectedrows)
+  df.to_csv('coords_impute.csv', index=False)
 
-# Carica il modello pre-addestrato
-#model = joblib.load('modello_addestrato.pkl')
-write_csv()
-#coords_data = pd.read_csv('coords.csv',sep=',')
-#print(coords_data.head())
-
-"""reader=csv.DictReader(coords, delimiter=',', quotechar='"', quoting=csv.QUOTE_MINIMAL)
-  print("qui")
-  for row in reader:
-    print("\naaaa",row)
-    if row:"""
-cv2.waitKey(0)
-cv2.destroyAllWindows()
-  
+#write_csv()
+# Carica il modello pre-addestrato se esiste
+coords_data = pd.read_csv('coords_impute.csv',sep=',')
+X = coords_data.drop('class', axis = 1)
+y = coords_data['class']
 
 
+#20% test e 80% train
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=678)
 
+# Algoritmi da confrontare
+model=RidgeClassifier()
 
-""" 
-# Crea un DataFrame vuoto
-df = pd.DataFrame()
+"""     ("Logistic Regression", LogisticRegression(max_iter=5000)),
+    ("SGD", SGDClassifier()),
+    ("Gradient", GradientBoostingClassifier()),
+    ("Random Forest", RandomForestClassifier()) """
 
-# Estrai e aggiungi le coordinate delle landmark al DataFrame
-if results.pose_landmarks:
-    coordinate = []
-    for landmark in results.pose_landmarks.landmark:
-        if landmark is not None:
-            x = landmark.x
-            y = landmark.y
-        else:
-            x = None
-            y = None
-        coordinate.append((x, y))
-    df['PoseLandmark'] = coordinate
+results = []
+names = []
 
-# Estrai e aggiungi le coordinate delle landmark del volto al DataFrame (se necessario)
-
-    df['FaceLandmark'] = coordinate
-
-# Salva il DataFrame in un file CSV
-df.to_csv('landmarks.csv', index=False) """
+model.fit(X_train, y_train)
+p_test = model.predict(X_test)
+print(model, " accurancy: ", '{:.2%}'.format(accuracy_score(y_test, p_test)))
+report=classification_report(p_test, y_test)
+print(report)
+joblib.dump(model, 'modello_addestrato.pkl')
