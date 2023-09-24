@@ -15,6 +15,7 @@ import joblib
 import seaborn as sns
 
 import sys
+from os.path import exists
 
 from sklearn.model_selection import train_test_split, cross_val_score
 from sklearn.linear_model import LogisticRegression, RidgeClassifier
@@ -42,11 +43,12 @@ def draw_landmarks_on_image(rgb_image, detection_result):
                             ) 
   return annotated_image
 
+  """     static_image_mode=True,
+      model_complexity=2,
+      enable_segmentation=True, """
 def make_detections(source):
   with mp_holistic.Holistic(
-      static_image_mode=True,
-      model_complexity=2,
-      enable_segmentation=True,
+    min_detection_confidence=0.5, min_tracking_confidence=0.5,
       refine_face_landmarks=True) as holistic:
     image = cv2.imread(source)
     results = holistic.process(cv2.cvtColor(image, cv2.COLOR_BGR2RGB))
@@ -61,11 +63,11 @@ def write_csv():
     fields +=["px{}".format(x), "py{}".format(x),"pz{}".format(x),"pv{}".format(x)]
   for x in range(478):
     fields +=["fx{}".format(x), "fy{}".format(x),"fz{}".format(x),"fv{}".format(x)] 
-  df = pd.DataFrame(columns= fields);          
+  df = pd.DataFrame(columns= fields)         
   for emotion in os.listdir("./dataset"):
-    print(emotion)
-    if not emotion.startswith('.'):
-      for img in os.listdir("./dataset/"+ emotion):
+    if not emotion.startswith('.') and not emotion == 'test' and not emotion == 'check':
+      print(emotion)
+      for img in os.listdir("./dataset/"+ emotion) :
         if not img.startswith('.'):
           results=make_detections("./dataset/"+ emotion + "/" + img)
           if not results.pose_landmarks and not results.face_landmarks:
@@ -121,10 +123,83 @@ def write_csv():
       df.loc[df["class"]==emotion, selectedrows.columns] = imputer.transform(selectedrows)
   df.to_csv('coords_impute.csv', index=False)
 
-#write_csv()
+def write_webcam_csv():
+  cap = cv2.VideoCapture(0)
+  fields = ["class"]
+  for x in range(33):
+    fields +=["px{}".format(x), "py{}".format(x),"pz{}".format(x),"pv{}".format(x)]
+  for x in range(478):
+    fields +=["fx{}".format(x), "fy{}".format(x),"fz{}".format(x),"fv{}".format(x)]
+  # Initiate holistic model
+  df = pd.DataFrame(columns=fields)
+  with mp_holistic.Holistic(min_detection_confidence=0.5, min_tracking_confidence=0.5, refine_face_landmarks=True) as holistic:
+    df = pd.DataFrame(columns=fields)
+    while cap.isOpened():
+      emotion='angry'
+      coordinate = [emotion]
+      ret, frame = cap.read()
+      image = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+      image.flags.writeable = False      
+      results = holistic.process(image)  
+      image = draw_landmarks_on_image(image, results)
+      cv2.imshow('Raw Webcam Feed', image)
+      try:
+        if results.pose_landmarks:
+          for landmark in results.pose_landmarks.landmark:
+              if landmark is not None:
+                coordinate.append(landmark.x)
+                coordinate.append(landmark.y)
+                coordinate.append(landmark.z)
+                coordinate.append(landmark.visibility)
+              else:
+                coordinate.append(None)
+                coordinate.append(None)
+                coordinate.append(None)
+                coordinate.append(0)
+        else:
+          for x in range(33):
+            coordinate.append(None)
+            coordinate.append(None)
+            coordinate.append(None)
+            coordinate.append(0)
+        if results.face_landmarks:
+          for landmark in results.face_landmarks.landmark:
+            if landmark is not None:
+              coordinate.append(landmark.x)
+              coordinate.append(landmark.y)
+              coordinate.append(landmark.z)
+              coordinate.append(landmark.visibility)
+            else:
+              coordinate.append(None)
+              coordinate.append(None)
+              coordinate.append(None)
+              coordinate.append(0)
+        else:
+          for x in range(478):
+            coordinate.append(None)
+            coordinate.append(None)
+            coordinate.append(None)
+            coordinate.append(0)
+        df.loc[len(df.index)] = coordinate    
+      except:
+        pass   
+      if cv2.waitKey(10) & 0xFF == ord('q'):
+          break
+    selectedrows = df[df["class"]==emotion].drop("class", axis=1)
+    imputer = SimpleImputer(missing_values = np.nan, strategy ='mean')
+    imputer = imputer.fit(selectedrows)
+    df.loc[df["class"]==emotion, selectedrows.columns] = imputer.transform(selectedrows)
+    if not exists("./coords_webcam.csv"):
+      df.to_csv('coords_webcam.csv', index=False)
+    df.drop(df.index[0]).to_csv('coords_webcam.csv', mode='a', index=False, header=None)
+  cap.release()
+  cv2.destroyAllWindows()
+
+write_csv()
+#write_webcam_csv()
 # Carica il modello pre-addestrato se esiste
 coords_data = pd.read_csv('coords_impute.csv',sep=',')
-X = coords_data.drop('class', axis = 1)
+X = coords_data.drop('class', axis = 1).values
 y = coords_data['class']
 
 
@@ -132,19 +207,35 @@ y = coords_data['class']
 X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=678)
 
 # Algoritmi da confrontare
-model=RidgeClassifier()
+models={
+    "lr": LogisticRegression(max_iter=5000),
+    "SGD": SGDClassifier(),
+    "Gradient1": GradientBoostingClassifier(learning_rate=0.5),
+    "Gradient2": GradientBoostingClassifier(learning_rate=0.2),
+    "Gradient3": GradientBoostingClassifier(learning_rate=0.7),
+    "Random Forest":RandomForestClassifier(),
+    "ridge":RidgeClassifier()
+}
+
+
+results = []
+names = []
+for model in models:
+  models[model].fit(X_train, y_train)
+  p_test = models[model].predict(X_test)
+  print(model, " accurancy: ", '{:.2%}'.format(accuracy_score(y_test, p_test)))
+  report=classification_report(p_test, y_test)
+  print(report)
+  
+""" models['Gradient'].fit(X_train, y_train)
+p_test = models['Gradient'].predict(X_test)
+print( models['Gradient']," accurancy: ", '{:.2%}'.format(accuracy_score(y_test, p_test)))
+report=classification_report(p_test, y_test)
+print(report)
+
+joblib.dump(models['Gradient'], 'modello_addestrato_values.pkl') """
 
 """     ("Logistic Regression", LogisticRegression(max_iter=5000)),
     ("SGD", SGDClassifier()),
     ("Gradient", GradientBoostingClassifier()),
     ("Random Forest", RandomForestClassifier()) """
-
-results = []
-names = []
-
-model.fit(X_train, y_train)
-p_test = model.predict(X_test)
-print(model, " accurancy: ", '{:.2%}'.format(accuracy_score(y_test, p_test)))
-report=classification_report(p_test, y_test)
-print(report)
-joblib.dump(model, 'modello_addestrato.pkl')
