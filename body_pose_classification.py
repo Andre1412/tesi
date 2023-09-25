@@ -42,7 +42,7 @@ def draw_landmarks_on_image(rgb_image, detection_result):
 
 
 def make_detections(source):
-  #model = joblib.load('modello_addestrato_values.pkl')
+  model = joblib.load('modello_addestrato_values.pkl')
   if mode=='-w':
     image=source
     image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
@@ -53,13 +53,12 @@ def make_detections(source):
     min_detection_confidence=0.5, min_tracking_confidence=0.5, refine_face_landmarks=True) as holistic:
     results = holistic.process(image)
   annotated_image = draw_landmarks_on_image(image, results)
-  coordinate = []
-  """     pose = list([[landmark.x, landmark.y, landmark.z, landmark.visibility] for landmark in results.pose_landmarks.landmark]) if results.pose_landmarks else list(np.array([[-1,-1,-1,0] for i in range(33)]))
-    face = list([[landmark.x, landmark.y, landmark.z, landmark.visibility] for landmark in results.face_landmarks.landmark]) if results.face_landmarks else list(np.array([[-1,-1,-1,0] for i in range(478)]))
-    print(pose)
-    X=pd.DataFrame([pose + face])  
-  """
-  if results.pose_landmarks:
+  pose = [[landmark.x, landmark.y, landmark.z, landmark.visibility] for landmark in results.pose_landmarks.landmark] if results.pose_landmarks else np.array([[None,None,None,0] for i in range(33)])
+  face = [[landmark.x, landmark.y, landmark.z, landmark.visibility] for landmark in results.face_landmarks.landmark] if results.face_landmarks else np.array([[None,None,None,0] for i in range(478)])
+  coords = np.concatenate((pose, face), axis=None)
+  X=pd.DataFrame([coords])
+  coordinate=[]
+  """if results.pose_landmarks:
     for landmark in results.pose_landmarks.landmark:
       if landmark is not None:
           coordinate.append(landmark.x)
@@ -94,30 +93,30 @@ def make_detections(source):
       coordinate.append(None)
       coordinate.append(None)
       coordinate.append(None)
-      coordinate.append(0)
-  df = pd.read_csv('coords_impute.csv')
+      coordinate.append(0)"""
+  #df = pd.read_csv('coords_impute.csv',sep=',')
+  """   imputer = SimpleImputer(missing_values = np.nan, strategy ='mean')
+  imputer = imputer.fit(df.drop('class',axis=1))"""
+  #X=pd.DataFrame([coordinate])
+  #X = imputer.transform(X)
+  body_language_class = model.predict(X)[0]
+  body_language_prob = model.predict_proba(X)[0]
+  text = body_language_class + ": " + str(max(body_language_prob))
+  cv2.putText(annotated_image, text, (10, 100),cv2.FONT_HERSHEY_COMPLEX_SMALL, 5, (0,0,204), 10, cv2.LINE_AA)
   
-  fields = []
-  for x in range(33):
-    fields +=["px{}".format(x), "py{}".format(x),"pz{}".format(x),"pv{}".format(x)]
-  for x in range(478):
-    fields +=["fx{}".format(x), "fy{}".format(x),"fz{}".format(x),"fv{}".format(x)] 
-
-  X=pd.DataFrame(columns=fields, data=[coordinate])
-  imputer = SimpleImputer(missing_values = np.nan, strategy ='mean')
-  imputer = imputer.fit(df.drop('class',axis=1))
-  X = imputer.transform(X)
-
-  body_language_class = "happy"
-  body_language_prob = 0
-  #body_language_class = model.predict(X)[0]
-  #body_language_prob = model.predict_proba(X)[0]
-  #body_language_class = ''
-
-  """   size, _ = cv2.getTextSize(body_language_class + ": " +str(round(body_language_prob[np.argmax(body_language_prob)],2)), cv2.FONT_HERSHEY_COMPLEX_SMALL, 5, 10)
-    width, height = size
-    cv2.rectangle(annotated_image, (10, 10), (int(width), 150), (151, 207, 255), -1)
-    cv2.putText(annotated_image, body_language_class+ ": " +str(round(body_language_prob[np.argmax(body_language_prob)],2)), (10, 100),cv2.FONT_HERSHEY_COMPLEX_SMALL, 5, (0,0,204), 10, cv2.LINE_AA)
+  """
+  text=''
+  i=0
+  classes = ['angry', 'disgust', 'fear','happy', 'sad', 'surprise']
+  for prob in body_language_prob.flatten():
+      text += classes[i]+ ": " +'{:.2%}'.format(round(prob,2)) + "\n"
+      i=i+1
+      #cv2.rectangle(annotated_image, (10, 10*i), (int(width)*i, 150*i), (151, 207, 255), -1)
+    y0, dy= 100,100
+    for i, line in enumerate(text.split('\n')):
+      y = y0 + i*dy
+      print(y)
+      cv2.putText(annotated_image, line, (10, y),cv2.FONT_HERSHEY_COMPLEX_SMALL, 5, (0,0,204), 10, cv2.LINE_AA)
   """  
   return results, annotated_image
 
@@ -133,6 +132,7 @@ def check_landmarks(emotion):
 path=""
 if mode == "-w": #webcam
   cap = cv2.VideoCapture(0)
+  cap.set(cv2.CAP_PROP_BUFFERSIZE, 2)
   while cap.isOpened():
     success, image = cap.read()
     if not success:
@@ -140,7 +140,10 @@ if mode == "-w": #webcam
       continue
     image.flags.writeable = False
     image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-    results, image=make_detections(image)
+    try:
+      results, image=make_detections(image)
+    except:
+      pass
     cv2.imshow('MediaPipe Holistic', image)
     if cv2.waitKey(10) & 0xFF == ord('q'):
         break
@@ -152,7 +155,6 @@ else: #img
   if len(sys.argv) == 3 :
     path = str(sys.argv[2])
     print("------------",path)
-
   else :
     while not os.path.isfile(path):
       path = input("Path is invalid. Please enter valid img path: ")

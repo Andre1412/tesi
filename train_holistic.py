@@ -13,7 +13,7 @@ import numpy as np
 import joblib
 
 import seaborn as sns
-
+import matplotlib.pyplot as plt
 import sys
 from os.path import exists
 
@@ -23,7 +23,7 @@ from sklearn.linear_model import SGDClassifier
 from sklearn.ensemble import RandomForestClassifier,GradientBoostingClassifier
 from sklearn.metrics import accuracy_score, classification_report
 from sklearn.impute import SimpleImputer
-
+from sklearn.model_selection import learning_curve
 mp_holistic = mp.solutions.holistic
 
 
@@ -135,7 +135,7 @@ def write_webcam_csv():
   with mp_holistic.Holistic(min_detection_confidence=0.5, min_tracking_confidence=0.5, refine_face_landmarks=True) as holistic:
     df = pd.DataFrame(columns=fields)
     while cap.isOpened():
-      emotion='angry'
+      emotion='sad'
       coordinate = [emotion]
       ret, frame = cap.read()
       image = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
@@ -189,53 +189,53 @@ def write_webcam_csv():
     imputer = SimpleImputer(missing_values = np.nan, strategy ='mean')
     imputer = imputer.fit(selectedrows)
     df.loc[df["class"]==emotion, selectedrows.columns] = imputer.transform(selectedrows)
-    if not exists("./coords_webcam.csv"):
-      df.to_csv('coords_webcam.csv', index=False)
-    df.drop(df.index[0]).to_csv('coords_webcam.csv', mode='a', index=False, header=None)
+    if not exists("./coords_webcam_me.csv"):
+      df.to_csv('coords_webcam_me.csv', index=False)
+    df.drop(df.index[0]).to_csv('coords_webcam_me.csv', mode='a', index=False, header=None)
   cap.release()
   cv2.destroyAllWindows()
-
-write_csv()
-#write_webcam_csv()
-# Carica il modello pre-addestrato se esiste
-coords_data = pd.read_csv('coords_impute.csv',sep=',')
-X = coords_data.drop('class', axis = 1).values
-y = coords_data['class']
-
-
-#20% test e 80% train
-X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=678)
-
-# Algoritmi da confrontare
-models={
-    "lr": LogisticRegression(max_iter=5000),
-    "SGD": SGDClassifier(),
-    "Gradient1": GradientBoostingClassifier(learning_rate=0.5),
-    "Gradient2": GradientBoostingClassifier(learning_rate=0.2),
-    "Gradient3": GradientBoostingClassifier(learning_rate=0.7),
-    "Random Forest":RandomForestClassifier(),
-    "ridge":RidgeClassifier()
-}
+  
+def train_model():
+  # Carica il modello pre-addestrato se esiste
+  coords_data = pd.read_csv('coords_impute.csv',sep=',')
+  X = coords_data.drop('class', axis = 1).values
+  y = coords_data['class']
 
 
-results = []
-names = []
-for model in models:
-  models[model].fit(X_train, y_train)
-  p_test = models[model].predict(X_test)
-  print(model, " accurancy: ", '{:.2%}'.format(accuracy_score(y_test, p_test)))
+  #20% test e 80% train
+  X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=678)
+
+  # Algoritmi da confrontare
+  models={
+      "Gradient1": GradientBoostingClassifier(learning_rate=0.5),
+      "Gradient2": GradientBoostingClassifier(learning_rate=0.2),
+      "Gradient3": GradientBoostingClassifier(learning_rate=0.2, max_depth=3,n_estimators=300, validation_fraction=0.1, n_iter_no_change=5, random_state=42),
+      "Random Forest":RandomForestClassifier(),
+      "ridge":RidgeClassifier()
+  }
+
+
+  results = []
+  names = []
+  """   for model in models:
+    models[model].fit(X_train, y_train)
+    p_test = models[model].predict(X_test)
+    print(model, " accurancy: ", '{:.2%}'.format(accuracy_score(y_test, p_test)))
+    report=classification_report(p_test, y_test)
+    print(report) """
+  models['Gradient3'].fit(X_train, y_train)
+  p_test = models['Gradient3'].predict(X_test)
+  print( models['Gradient3']," accurancy: ", '{:.2%}'.format(accuracy_score(y_test, p_test)))
   report=classification_report(p_test, y_test)
   print(report)
-  
-""" models['Gradient'].fit(X_train, y_train)
-p_test = models['Gradient'].predict(X_test)
-print( models['Gradient']," accurancy: ", '{:.2%}'.format(accuracy_score(y_test, p_test)))
-report=classification_report(p_test, y_test)
-print(report)
+  joblib.dump(models['Gradient3'], 'modello_addestrato_values.pkl')
 
-joblib.dump(models['Gradient'], 'modello_addestrato_values.pkl') """
 
-"""     ("Logistic Regression", LogisticRegression(max_iter=5000)),
-    ("SGD", SGDClassifier()),
-    ("Gradient", GradientBoostingClassifier()),
-    ("Random Forest", RandomForestClassifier()) """
+  """     ("Logistic Regression", LogisticRegression(max_iter=5000)),
+      ("SGD", SGDClassifier()),
+      ("Gradient", GradientBoostingClassifier()),
+      ("Random Forest", RandomForestClassifier()) """
+      
+#write_csv()
+#write_webcam_csv()
+train_model()
