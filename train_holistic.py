@@ -135,7 +135,7 @@ def write_webcam_csv():
   with mp_holistic.Holistic(min_detection_confidence=0.5, min_tracking_confidence=0.5, refine_face_landmarks=True) as holistic:
     df = pd.DataFrame(columns=fields)
     while cap.isOpened():
-      emotion='disgust'
+      emotion='neutral'
       coordinate = [emotion]
       ret, frame = cap.read()
       image = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
@@ -189,9 +189,9 @@ def write_webcam_csv():
     imputer = SimpleImputer(missing_values = np.nan, strategy ='mean')
     imputer = imputer.fit(selectedrows)
     df.loc[df["class"]==emotion, selectedrows.columns] = imputer.transform(selectedrows)
-    if not exists("./coords_webcam_me.csv"):
-      df.to_csv('coords_webcam_me.csv', index=False)
-    df.drop(df.index[0]).to_csv('coords_webcam_me.csv', mode='a', index=False, header=None)
+    if not exists("./coords_webcam_neutral.csv"):
+      df.to_csv('coords_webcam_neutral.csv', index=False)
+    df.drop(df.index[0]).to_csv('coords_webcam_neutral.csv', mode='a', index=False, header=None)
   cap.release()
   cv2.destroyAllWindows()
   
