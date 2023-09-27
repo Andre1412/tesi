@@ -135,7 +135,7 @@ def write_webcam_csv():
   with mp_holistic.Holistic(min_detection_confidence=0.5, min_tracking_confidence=0.5, refine_face_landmarks=True) as holistic:
     df = pd.DataFrame(columns=fields)
     while cap.isOpened():
-      emotion='sad'
+      emotion='disgust'
       coordinate = [emotion]
       ret, frame = cap.read()
       image = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
