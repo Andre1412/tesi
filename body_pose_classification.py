@@ -63,7 +63,7 @@ def make_detections(source):
   body_language_class = model.predict(X)[0]
   body_language_prob = model.predict_proba(X)[0]
   if mode == '-w':
-    text = body_language_class + ": " + str(max(body_language_prob))
+    text = body_language_class + ": " + str('{:.2%}'.format(round(max(body_language_prob),2)))
     cv2.putText(annotated_image, text, (10, 100),cv2.FONT_HERSHEY_COMPLEX_SMALL, 5, (0,0,204), 10, cv2.LINE_AA)
   else:
     text=''
